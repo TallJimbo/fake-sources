@@ -8,13 +8,14 @@ import lsst.afw.math
 import lsst.afw.cameraGeom
 import lsst.afw.coord
 import lsst.pex.config
-from lsst.pipe.tasks.fakes import FakeSourcesConfig, FakeSourcesTask
 import pyfits as fits
 
 import makeFakeGalaxy as makeFake
 import FakeSourceLib as fsl
 
-class PositionGalSimFakesConfig(FakeSourcesConfig):
+from .measuredFakeSources import MeasuredFakeSourcesTask, MeasuredFakeSourcesConfig
+
+class PositionGalSimFakesConfig(MeasuredFakeSourcesConfig):
     galList = lsst.pex.config.Field(dtype=str, doc="catalog of galaxies to add")
     maxMargin = lsst.pex.config.Field(dtype=int, default=600, optional=True,
                                    doc="Size of margin = 1/2 of maximum galsim image size, in pixels")
@@ -29,11 +30,11 @@ class PositionGalSimFakesConfig(FakeSourcesConfig):
                                      doc='include shear in the galaxies')
 
 
-class PositionGalSimFakesTask(FakeSourcesTask):
+class PositionGalSimFakesTask(MeasuredFakeSourcesTask):
     ConfigClass = PositionGalSimFakesConfig
 
     def __init__(self, **kwargs):
-        FakeSourcesTask.__init__(self, **kwargs)
+        MeasuredFakeSourcesTask.__init__(self, **kwargs)
         print "RNG seed:", self.config.seed
         self.rng = lsst.afw.math.Random(self.config.seed)
         self.npRand = np.random.RandomState(self.config.seed)
@@ -53,6 +54,8 @@ class PositionGalSimFakesTask(FakeSourcesTask):
         skipLog = 'runAddFake.skipped'
         if not os.path.isfile(skipLog):
             dum = os.system('touch ' + skipLog)
+
+        measCat = self.makeCatalog()
 
         for igal, gal in enumerate(self.galData):
             try:
@@ -151,6 +154,8 @@ class PositionGalSimFakesTask(FakeSourcesTask):
                 galImage = galImage.Factory(galImage, newBBox, lsst.afw.image.PARENT)
                 galBBox = newBBox
 
+            self.measureFake(exposure, galImage, galXY, measCat)
+
             galMaskedImage = fsl.addNoise(galImage, exposure.getDetector(),
                                           rand_gen=self.npRand)
 
@@ -164,4 +169,6 @@ class PositionGalSimFakesTask(FakeSourcesTask):
                                                                lsst.afw.image.PARENT)
             subMaskedImage += galMaskedImage
 
+        self.measureParents(exposure, measCat)
 
+        return measCat
